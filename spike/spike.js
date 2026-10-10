@@ -100,6 +100,12 @@ road.position.set(10, 0, 0.6);
 road.receiveShadow = true;
 scene.add(road);
 
+// Foreground fill so the road never ends mid-screen.
+const front = new THREE.Mesh(new THREE.BoxGeometry(90, 0.05, 20), toon(0x5a6672));
+front.position.set(10, -0.02, 13.1);
+front.receiveShadow = true;
+scene.add(front);
+
 const curb = new THREE.Mesh(new THREE.BoxGeometry(80, 0.18, 0.5), toon(0xd9d2c0));
 curb.position.set(10, 0.09, -1.95); curb.castShadow = true; curb.receiveShadow = true;
 const walk = new THREE.Mesh(new THREE.BoxGeometry(80, 0.1, 3.4), toon(0xe8dfc8));
@@ -324,13 +330,14 @@ const dogParts = {};
 })();
 
 const DOG = { phase: 'wait', t: 0, x: 22, speed: 13 };
+window.__dbg = { DOG, dog, camera };
 function updateDog(dt, worldDt) {
   DOG.t += dt;
   const { head, tail, legs } = dogParts;
   dog.position.z = 0.4;
   if (DOG.phase === 'wait') {
     dog.position.x = 22; dog.visible = false;
-    if (DOG.t > 2.2) { DOG.phase = 'windup'; DOG.t = 0; DOG.x = 12; dog.visible = true; }
+    if (DOG.t > 2.2) { DOG.phase = 'windup'; DOG.t = 0; DOG.x = 7.2; dog.visible = true; }
   } else if (DOG.phase === 'windup') {
     // Wind-up tell: crouch, ears back, tail blur, bark bounce.
     dog.position.x = DOG.x - worldDt * 0;
@@ -369,8 +376,7 @@ window.addEventListener('resize', () => {
 // ---------- loop ----------
 const clock = new THREE.Clock();
 let elapsed = 0, fpsAcc = 0, fpsN = 0, fps = 0;
-function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
+function step(dt) {
   elapsed += dt; stateTime += dt;
   const pace = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 1.5 : 1;
   const worldDt = WORLD_SPEED * pace * dt;
@@ -391,8 +397,12 @@ function frame() {
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) { fps = Math.round(fpsN / fpsAcc); fpsAcc = 0; fpsN = 0; fpsEl.textContent = ` | ${fps} fps`; }
   renderer.render(scene, camera);
+}
+function frame() {
+  step(Math.min(clock.getDelta(), 0.05));
   requestAnimationFrame(frame);
 }
+window.__dbg.step = step; // test hook: advance the game without real time
 const fpsEl = document.createElement('span');
 statusEl.after(fpsEl);
 
