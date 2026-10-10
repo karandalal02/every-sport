@@ -1,13 +1,16 @@
 // Every Sport: playable skeleton (football / street zone only).
 // Game flow: ready -> intro (ball drops) -> running -> over. Pause with P or Esc.
 import * as THREE from 'three';
-import { createWorld, toon, addOutline } from './world.js';
+import { createWorld } from './world.js';
 import { createHero } from './hero.js';
+import { createBall } from './ball.js';
 import { makeDog, makeGrandma, makePigeons, makeSprinkler, makeLampPost, makeGoal } from './threats.js';
 
 const SPAWN_X = 18;
 const BASE_SPEED = 6;
-const PASS_RANGE = 8.5, SHOT_RANGE = 9.5;
+const PASS_RANGE = 9, SHOT_RANGE = 10;
+const SAFE_TIME = 1.2;      // nothing can tackle the hero this long after the ball reaches a target
+const BALL_AHEAD = 3.4;     // where the ball is played to, ahead of the hero's feet
 
 const world = createWorld(document.getElementById('stage'));
 const { scene, camera, renderer, baseCam } = world;
@@ -15,7 +18,7 @@ const { scene, camera, renderer, baseCam } = world;
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
 const ui = {
-  score: $('score'), best: $('best'), pace: $('pace'), toast: $('toast'),
+  score: $('score'), best: $('best'), pace: $('pace'), toast: $('toast'), prompt: $('prompt'),
   overlay: $('overlay'), title: $('ov-title'), body: $('ov-body'), hint: $('ov-hint'),
 };
 let best = 0;
@@ -37,17 +40,7 @@ const hero = createHero();
 hero.group.position.set(0, 0, 0.4);
 scene.add(hero.group);
 
-const ball = new THREE.Group();
-const ballCore = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), toon(0xffffff));
-for (let i = 0; i < 5; i++) {
-  const p = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), toon(0x222222));
-  const a = (i / 5) * Math.PI * 2;
-  p.position.set(Math.cos(a) * 0.16, Math.sin(a * 2) * 0.1, Math.sin(a) * 0.16);
-  ballCore.add(p);
-}
-ball.add(ballCore);
-addOutline(ball, 0.015);
-ball.traverse((o) => { if (o.isMesh && !o.userData.isOutline) o.castShadow = true; });
+const ball = createBall();
 scene.add(ball);
 
 const safeRing = new THREE.Mesh(
@@ -82,7 +75,7 @@ const G = {
   mode: 'ready', clock: 0, scroll: 0, distance: 0, introT: 0, overT: 0,
   objects: [], last: null, bag: [], rng: Math.random, lastType: '',
   safeUntil: -1, ballMode: 'attached', flight: null, ballVel: 0,
-  shake: 0, cause: '', newBest: false, queued: null,
+  shake: 0, cause: '', tip: '', promptText: '', newBest: false, queued: null,
 };
 const anchor = new THREE.Vector3();
 const keys = new Set();
@@ -116,7 +109,7 @@ function spawn(type) {
   if (type === 'dog') objs.push(makeDog());
   else if (type === 'grandma') objs.push(makeGrandma());
   else if (type === 'pigeons') objs.push(makePigeons());
-  else if (type === 'sprinkler') objs.push(makeSprinkler(SPAWN_X), makeLampPost(SPAWN_X + 4.6));
+  else if (type === 'sprinkler') objs.push(makeSprinkler(SPAWN_X), makeLampPost(SPAWN_X + 3.6));
   else if (type === 'goal') objs.push(makeGoal(SPAWN_X));
   for (const o of objs) { o.mesh.position.x = o.x; scene.add(o.mesh); G.objects.push(o); }
   G.last = objs[0];
@@ -139,14 +132,15 @@ function start() {
 }
 
 function die(o) {
-  G.mode = 'over'; G.overT = 0; G.shake = 0.4; G.cause = o.name;
+  G.mode = 'over'; G.overT = 0; G.shake = 0.4; G.cause = o.name; G.tip = o.tip || '';
   G.ballMode = 'free'; G.ballVel = 4; G.flight = null;
+  ui.prompt.classList.remove('show');
   hero.setState('fall');
   if (G.distance > best) { best = G.distance; G.newBest = true; saveBest(); }
 }
 
 function togglePause() {
-  if (G.mode === 'running') { G.mode = 'paused'; showOverlay('Paused', 'Your run is on hold.', 'Press P, Esc or Space to resume'); }
+  if (G.mode === 'running') { G.mode = 'paused'; showOverlay('Paused', 'Your run is on hold.', 'Press Q, Esc or Space to resume'); }
   else if (G.mode === 'paused') { G.mode = 'running'; hideOverlay(); }
 }
 
@@ -160,43 +154,83 @@ function ballAction(kind) {
     if (o.kind === want && o.x > 0.8 && o.x < range && (!target || o.x < target.x)) target = o;
   }
   G.ballMode = 'flight';
-  G.flight = { t: 0, out: 0.4, back: 0.4, target, kind, hit: false };
+  G.flight = { t: 0, out: 0.4, back: 0.45, target, kind, hit: false, from: new THREE.Vector3() };
   // The ball must reach something to count. Then nothing can tackle the hero while it is away.
-  if (target) G.safeUntil = G.clock + 0.9;
+  hero.anchor(G.flight.from);
+  if (target) G.safeUntil = G.clock + SAFE_TIME;
 }
 
 const easeOut = (u) => 1 - (1 - u) * (1 - u);
 const easeIn = (u) => u * u;
 const tmp = new THREE.Vector3();
+const land = new THREE.Vector3();
 
-function updateBall(dt) {
+// The ball is played ahead and the hero runs onto it.
+//   flight: feet -> target (if any) -> a spot ahead of the hero   (no target: straight to that spot)
+//   rolling: the ball lies on the scrolling ground until the hero reaches it
+function updateBall(dt, scrollDt) {
   hero.anchor(anchor);
+  land.set(anchor.x + BALL_AHEAD, 0.2, 0.4);
   if (G.ballMode === 'attached') {
     ball.position.copy(anchor);
     ball.rotation.z -= dt * 6;
   } else if (G.ballMode === 'flight') {
     const f = G.flight;
     f.t += dt;
-    const tp = f.target ? tmp.set(f.target.x, f.target.targetY, 0.4) : tmp.set(anchor.x + 4, 0.5, 0.4);
-    if (f.t < f.out) {
+    const tp = f.target
+      ? tmp.set(f.target.x + (f.target.targetDX || 0), f.target.targetY, f.target.targetZ ?? 0.4)
+      : null;
+    if (!f.target) {
+      // Nothing to bounce off: just play it ahead.
+      const u = Math.min(f.t / f.out, 1);
+      if (u === 1) { ball.position.copy(land); G.ballMode = 'rolling'; G.flight = null; }
+      else {
+        ball.position.copy(f.from).lerp(land, easeOut(u));
+        ball.position.y += Math.sin(Math.PI * u) * 0.5;
+      }
+    } else if (f.t < f.out) {
       const u = f.t / f.out;
-      ball.position.copy(anchor).lerp(tp, easeOut(u));
+      ball.position.copy(f.from).lerp(tp, easeOut(u));
       ball.position.y += Math.sin(Math.PI * u) * 0.6;
     } else {
       if (!f.hit) {
         f.hit = true;
-        if (f.target && f.kind === 'shot') { burst(f.target.x, 1.2, [0xffc93c, 0xffffff, 0xff7b54]); toast('GOAL!'); }
-        else if (f.target) { burst(f.target.x, 1.2, [0x40c4ff, 0xffffff]); toast('One-two!'); }
+        if (f.kind === 'shot') { burst(f.target.x + 0.9, 1.2, [0xffc93c, 0xffffff, 0xff7b54]); toast('GOAL!'); }
+        else { burst(f.target.x, 1.2, [0x40c4ff, 0xffffff]); toast('One-two!'); }
       }
       const v = Math.min((f.t - f.out) / f.back, 1);
-      ball.position.copy(tp).lerp(anchor, easeIn(v));
-      ball.position.y += Math.sin(Math.PI * v) * 0.3;
-      if (v >= 1) { G.ballMode = 'attached'; G.flight = null; }
+      ball.position.copy(tp).lerp(land, easeIn(v));
+      ball.position.y += Math.sin(Math.PI * v) * 0.5;
+      if (v >= 1) { G.ballMode = 'rolling'; G.flight = null; }
     }
     ball.rotation.z -= dt * 14;
+  } else if (G.ballMode === 'rolling') {
+    ball.position.x -= scrollDt;           // it lies on the ground, so the scrolling world carries it
+    ball.position.y = 0.2;
+    ball.rotation.z += scrollDt * 5;
+    const grounded = hero.hb.y0 < 0.45;
+    if ((ball.position.x <= anchor.x + 0.2 && grounded) || ball.position.x < -0.4) {
+      G.ballMode = 'attached';             // the hero runs onto it and takes control again
+    }
   } else if (G.ballMode === 'free') {
     ball.position.x += G.ballVel * dt; ball.position.y = 0.2;
     G.ballVel *= 0.96; ball.rotation.z -= G.ballVel * dt * 5;
+  }
+}
+
+// Tell the player what to press when a target is in range.
+function updatePrompt() {
+  let text = '';
+  if (G.ballMode === 'attached') {
+    const inRange = (kind, range) => G.objects.some((o) => o.kind === kind && o.x > 0.8 && o.x < range);
+    const wideAhead = G.objects.some((o) => o.shape === 'wide' && o.x > -1 && o.x < 14);
+    if (inRange('goal', SHOT_RANGE)) text = '<span class="k">F</span> shoot at the goal!';
+    else if (wideAhead && inRange('passable', PASS_RANGE)) text = '<span class="k">Space</span> pass off the lamp post!';
+  }
+  if (text !== G.promptText) {
+    G.promptText = text;
+    ui.prompt.innerHTML = text;
+    ui.prompt.classList.toggle('show', !!text);
   }
 }
 
@@ -223,7 +257,8 @@ function runStep(dt) {
   const sep = Math.max(10, 16 - G.distance / 80);
   if (!G.last || G.last.done || G.last.x <= SPAWN_X - sep) spawn(nextType());
 
-  updateBall(dt);
+  updateBall(dt, scrollDt);
+  updatePrompt();
 
   const safe = G.clock < G.safeUntil;
   safeRing.visible = safe;
@@ -243,7 +278,7 @@ function step(dt) {
   G.clock += dt;
 
   if (G.mode === 'ready') {
-    hero.update(dt, 1); updateBall(dt);
+    hero.update(dt, 1); updateBall(dt, 0);
   } else if (G.mode === 'intro') {
     G.introT += dt;
     hero.update(dt, 1); hero.anchor(anchor);
@@ -255,13 +290,14 @@ function step(dt) {
     runStep(dt);
   } else if (G.mode === 'over') {
     G.overT += dt;
-    hero.update(dt, 1); updateBall(dt);
+    hero.update(dt, 1); updateBall(dt, 0);
     safeRing.visible = false; ui.pace.textContent = '';
     if (G.overT > 0.8 && !ui.overlay.classList.contains('show')) {
       const d = Math.floor(G.distance);
       showOverlay(
         'Tackled!',
-        `Taken out by <b>${G.cause}</b>.<br>Distance: <b>${d} m</b>${G.newBest ? ' &nbsp;(new best!)' : ''}<br>Best: <b>${Math.floor(best)} m</b>`,
+        `Taken out by <b>${G.cause}</b>.<br>Distance: <b>${d} m</b>${G.newBest ? ' &nbsp;(new best!)' : ''}<br>Best: <b>${Math.floor(best)} m</b>` +
+        (G.tip ? `<br><span class="tip">Tip: ${G.tip}</span>` : ''),
         'Press Space to retry',
       );
     }
@@ -286,7 +322,7 @@ window.addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (e.repeat) return;
   const m = G.mode;
-  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
+  if (e.code === 'KeyQ' || e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
   if (m === 'ready' || m === 'over') {
     if ((e.code === 'Space' || e.code === 'Enter') && !(m === 'over' && G.overT < 0.6)) start();
     return;
@@ -309,7 +345,7 @@ showOverlay(
   'Every Sport',
   'You are always running. Read the threat, answer it, go as far as you can.<br>' +
   '<span class="k">&uarr;</span> jump &nbsp; <span class="k">&darr;</span> slide &nbsp; <span class="k">Shift</span> pace &nbsp; ' +
-  '<span class="k">Space</span> pass &nbsp; <span class="k">F</span> shoot &nbsp; <span class="k">P</span> pause',
+  '<span class="k">Space</span> pass &nbsp; <span class="k">F</span> shoot &nbsp; <span class="k">Q</span> pause',
   'Press Space to start',
 );
 

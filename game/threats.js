@@ -13,7 +13,7 @@ function done(group) { addOutline(group, 0.02); shadows(group); return group; }
 class Charger {
   constructor(parts, name, o) {
     this.kind = 'threat'; this.shape = 'low';
-    this.name = name; this.p = parts; this.o = o;
+    this.name = name; this.tip = o.tip; this.p = parts; this.o = o;
     this.mesh = parts.group; this.mesh.position.z = LANE_Z;
     this.x = 18; this.state = 'approach'; this.t = 0; this.done = false;
   }
@@ -79,6 +79,7 @@ function buildDog() {
 export function makeDog() {
   const parts = buildDog();
   return new Charger(parts, 'the zoomie dog', {
+    tip: 'The dog rushes in low. Jump (Up) just as it charges.',
     stopX: 7.2, windup: 0.9, speed: 13, hx0: -0.8, hx1: 0.9, h: 0.8,
     approachPose(p, t) {
       p.dog.scale.set(1, 1, 1); p.dog.position.y = Math.abs(Math.sin(t * 14)) * 0.06;
@@ -136,6 +137,7 @@ function buildGrandma() {
 export function makeGrandma() {
   const parts = buildGrandma();
   return new Charger(parts, 'a very fast grandma', {
+    tip: 'Grandma slides in low. Jump (Up) when she starts sliding.',
     stopX: 7.4, windup: 1.0, speed: 9.5, hx0: -0.6, hx1: 1.8, h: 0.7,
     approachPose(p, t) {
       p.body.rotation.z = 0; p.body.position.y = Math.abs(Math.sin(t * 9)) * 0.05; p.body.scale.set(1, 1, 1);
@@ -186,6 +188,7 @@ export function makePigeons() {
 
   return {
     kind: 'threat', shape: 'high', name: 'a flock of pigeons', x: 18, mesh: wrap, done: false,
+    tip: 'Pigeons fly high. Slide (Down) under them.',
     update(dt, scrollDt, time) {
       this.x -= scrollDt;
       wrap.position.x = this.x;
@@ -221,6 +224,7 @@ export function makeSprinkler(x = 18) {
 
   return {
     kind: 'threat', shape: 'wide', name: 'a surprise sprinkler', x, mesh: group, done: false,
+    tip: 'You cannot jump or duck a sprinkler. Press Space to pass off the blue lamp post behind it.',
     state: 'dormant', t: 0,
     update(dt, scrollDt, time) {
       this.x -= scrollDt;
@@ -267,25 +271,47 @@ export function makeLampPost(x = 22) {
   };
 }
 
-// ---------- goal: glowing gold, shoot with F ----------
+// ---------- goal: glowing gold, open toward the hero, seen in profile. Shoot with F ----------
+// The mouth faces -x (toward the runner) and the goal sits a little behind the running lane,
+// so the hero passes in front of it instead of through it.
 export function makeGoal(x = 18) {
   const group = new THREE.Group();
-  const gold = 0xffc93c;
-  const postMat = basic(gold);
-  const post = (px) => { const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.1, 0.12), postMat); p.position.set(px, 1.05, 0); return p; };
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.12, 0.12), postMat);
-  bar.position.set(0, 2.1, 0);
-  const mouth = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.0), basic(0xffe27a, 0.28));
-  mouth.position.set(0, 1.05, 0);
-  const net = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.0, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.35 }));
-  net.position.set(0, 1.05, -0.5);
-  group.add(post(-1.3), post(1.3), bar, mouth, net);
-  group.position.z = LANE_Z;
+  const gold = basic(0xffc93c);
+  const ZC = -1.2, HALF = 1.3, DEPTH = 1.6, H = 2.1, BACK_H = 1.6;
+  const box = (w, h, d, px, py, pz, rz = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), gold);
+    m.position.set(px, py, pz); m.rotation.z = rz; return m;
+  };
+  const slope = Math.atan2(H - BACK_H, DEPTH), railLen = Math.hypot(DEPTH, H - BACK_H);
+  group.add(
+    box(0.12, H, 0.12, 0, H / 2, ZC - HALF), box(0.12, H, 0.12, 0, H / 2, ZC + HALF),       // front posts
+    box(0.12, 0.12, HALF * 2 + 0.12, 0, H, ZC),                                              // crossbar
+    box(0.1, BACK_H, 0.1, DEPTH, BACK_H / 2, ZC - HALF), box(0.1, BACK_H, 0.1, DEPTH, BACK_H / 2, ZC + HALF),
+    box(0.1, 0.1, HALF * 2, DEPTH, BACK_H, ZC),                                              // back bar
+    box(railLen, 0.08, 0.08, DEPTH / 2, (H + BACK_H) / 2, ZC - HALF, -slope),               // top rails
+    box(railLen, 0.08, 0.08, DEPTH / 2, (H + BACK_H) / 2, ZC + HALF, -slope),
+  );
+  const netMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.4 });
+  const plane = (w, h, sx, sy) => new THREE.Mesh(new THREE.PlaneGeometry(w, h, sx, sy), netMat);
+  const back = plane(HALF * 2, BACK_H, 10, 7); back.rotation.y = -Math.PI / 2; back.position.set(DEPTH, BACK_H / 2, ZC);
+  const sideA = plane(DEPTH, (H + BACK_H) / 2, 6, 7); sideA.position.set(DEPTH / 2, (H + BACK_H) / 4, ZC - HALF);
+  const sideB = sideA.clone(); sideB.position.z = ZC + HALF;
+  const top = plane(railLen, HALF * 2, 6, 10); top.rotation.x = -Math.PI / 2;
+  const topTilt = new THREE.Group(); topTilt.rotation.z = -slope; topTilt.position.set(DEPTH / 2, (H + BACK_H) / 2, ZC);
+  topTilt.add(top);
+  group.add(back, sideA, sideB, topTilt);
+  const mouth = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, H), basic(0xffe27a, 0.3));
+  mouth.rotation.y = -Math.PI / 2; mouth.position.set(0, H / 2, ZC);
+  const glowBox = new THREE.Mesh(new THREE.BoxGeometry(DEPTH, H, HALF * 2), basic(0xffd84d, 0.1));
+  glowBox.position.set(DEPTH / 2, H / 2, ZC);
+  group.add(mouth, glowBox);
   return {
-    kind: 'goal', name: 'goal', x, mesh: group, done: false, targetY: 1.0,
+    kind: 'goal', name: 'goal', x, mesh: group, done: false,
+    targetY: 1.0, targetZ: ZC, targetDX: 0.9, // the ball flies into the open mouth
     update(dt, scrollDt, time) {
       this.x -= scrollDt; group.position.x = this.x;
-      mouth.material.opacity = 0.2 + 0.14 * (0.5 + 0.5 * Math.sin(time * 6));
+      const p = 0.5 + 0.5 * Math.sin(time * 6);
+      mouth.material.opacity = 0.2 + 0.16 * p; glowBox.material.opacity = 0.06 + 0.07 * p;
       if (this.x < -8) this.done = true;
     },
     hitbox() { return null; },

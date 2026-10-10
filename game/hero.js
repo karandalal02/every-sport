@@ -102,7 +102,8 @@ export function createHero() {
         upper.rotation.x = -0.95 * e;
         legL.rotation.x = -1.5 * e; legR.rotation.x = -1.35 * e;
         armL.rotation.x = -1.2 * e; armR.rotation.x = -1.2 * e;
-        bl.set(0, 0.2, 0.95 + Math.sin(u * Math.PI * 2) * 0.25 * e);
+        // The rig drops by 0.5 while sliding, so lift the ball by the same amount to keep it on the ground.
+        bl.set(0, 0.2 + 0.5 * e, 0.95 + Math.sin(u * Math.PI * 2) * 0.25 * e);
         if (u >= 1) hero.setState('run');
       } else if (s === 'fall') {
         const u = Math.min(hero.st / 0.9, 1);
