@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every Sport: art spike</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd8f5; font-family: system-ui, sans-serif; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 12px; top: 10px; color: #14304a; font-size: 13px; line-height: 1.5;
+         background: rgba(255,255,255,.72); padding: 8px 12px; border-radius: 8px; pointer-events: none; }
+  #hud b { font-weight: 700; }
+  #status { margin-top: 4px; opacity: .8; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <b>Every Sport: art spike</b><br>
+  Up = jump &nbsp; Down = slide &nbsp; Shift (hold) = pace 1.5x<br>
+  <span id="status">loading...</span>
+</div>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/build/three.module.js" } }
+</script>
+<script type="module" src="./spike.js"></script>
+</body>
+</html>
