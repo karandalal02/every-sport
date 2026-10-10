@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every Sport</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd8f5; font-family: system-ui, -apple-system, sans-serif; color: #14304a; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 16px; top: 12px; pointer-events: none; text-shadow: 0 1px 0 rgba(255,255,255,.7); }
+  #score { font-size: 38px; font-weight: 800; letter-spacing: .5px; }
+  #best { font-size: 14px; font-weight: 600; opacity: .75; }
+  #pace { font-size: 14px; font-weight: 800; color: #d4561c; min-height: 18px; }
+  #zone { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,.75);
+          padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; letter-spacing: .08em; pointer-events: none; }
+  #keys { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .8;
+          background: rgba(255,255,255,.65); padding: 5px 12px; border-radius: 8px; pointer-events: none; white-space: nowrap; }
+  .k { display: inline-block; min-width: 18px; padding: 1px 6px; margin: 0 2px; border-radius: 5px; background: #fff;
+       border: 1px solid #14304a55; border-bottom-width: 2px; font-weight: 700; text-align: center; font-size: .9em; }
+  #toast { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); font-size: 54px; font-weight: 900; color: #fff;
+           -webkit-text-stroke: 3px #14304a; paint-order: stroke fill; opacity: 0; pointer-events: none; }
+  #toast.show { animation: pop 0.9s ease-out; }
+  @keyframes pop { 0% { opacity: 0; transform: translateX(-50%) scale(.5); } 15% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+                   70% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) scale(1) translateY(-20px); } }
+  #overlay { position: fixed; inset: 0; display: none; place-items: center; background: rgba(20,48,74,.35); }
+  #overlay.show { display: grid; }
+  #card { background: #fff; border-radius: 18px; padding: 26px 34px; max-width: 30rem; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+  #card h1 { margin: 0 0 8px; font-size: 34px; }
+  #card p { margin: 6px 0; line-height: 1.6; }
+  #ov-hint { font-weight: 800; color: #1a5fa8; margin-top: 14px; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="hud"><div id="score">0 m</div><div id="best"></div><div id="pace"></div></div>
+<div id="zone">FOOTBALL &middot; STREET</div>
+<div id="toast"></div>
+<div id="keys"><span class="k">&uarr;</span> jump <span class="k">&darr;</span> slide <span class="k">Shift</span> pace <span class="k">Space</span> pass <span class="k">F</span> shoot <span class="k">P</span> pause</div>
+<div id="overlay"><div id="card"><h1 id="ov-title"></h1><p id="ov-body"></p><p id="ov-hint"></p></div></div>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/build/three.module.js" } }
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
